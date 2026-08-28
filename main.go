@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -25,19 +26,64 @@ var branchsCmd = &cobra.Command{
 	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		branchCmd := exec.Command("git", "branch", "--merged")
-
-		branchOut, branchErr := branchCmd.Output()
-
-		if branchErr != nil {
-			// fmt.Fprintln(os.Stderr, "error:", branchErr)
-			return branchErr
+		current, err := getCurrentBranch()
+		if err != nil {
+			return fmt.Errorf("could not determine current branch: %w", err)
 		}
 
-		fmt.Println(string(branchOut))
+		fmt.Printf("Working on branch: %s\n", current)
+
+		branches, err := getMergedBranches()
+
+		if err != nil {
+			return err
+		}
+		// Define which branches are off-limits
+		protectedBranches := map[string]bool{
+			"main":    true,
+			"master":  true,
+			"develop": true,
+		}
+		for _, branch := range branches {
+			if branch == current || protectedBranches[branch] {
+				continue
+			}
+			fmt.Println(branch)
+		}
 
 		return nil
 	},
+}
+
+func getMergedBranches() ([]string, error) {
+	listBranchCmd := exec.Command(
+		"git",
+		"--no-pager",
+		"branch",
+		"--format=%(refname:short)",
+		"--merged",
+	)
+
+	branchOut, err := listBranchCmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	branches := strings.Split(strings.TrimSpace(string(branchOut)), "\n")
+	return branches, nil
+}
+
+func getCurrentBranch() (string, error) {
+	cmd := exec.Command("git", "branch", "--show-current")
+
+	currentBranchOutput, err := cmd.Output()
+
+	if err != nil {
+		return "", err
+	}
+
+	currentBranch := strings.TrimSpace((string(currentBranchOutput)))
+
+	return currentBranch, nil
 }
 
 func main() {

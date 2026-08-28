@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 )
@@ -23,7 +24,18 @@ var branchsCmd = &cobra.Command{
 	Short: "list branches",
 	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("this is the branch command")
+
+		branchCmd := exec.Command("git", "branch", "--merged")
+
+		branchOut, branchErr := branchCmd.Output()
+
+		if branchErr != nil {
+			// fmt.Fprintln(os.Stderr, "error:", branchErr)
+			return branchErr
+		}
+
+		fmt.Println(string(branchOut))
+
 		return nil
 	},
 }

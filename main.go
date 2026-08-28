@@ -17,9 +17,22 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+// branch command
+var branchsCmd = &cobra.Command{
+	Use:   "branches",
+	Short: "list branches",
+	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("this is the branch command")
+		return nil
+	},
+}
+
 func main() {
+	rootCmd.AddCommand(branchsCmd)
+
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "there is an error", err)
-		os.Exit(0)
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
 }

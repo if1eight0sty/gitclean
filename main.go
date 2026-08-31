@@ -20,7 +20,7 @@ var rootCmd = &cobra.Command{
 }
 
 // branch command
-var branchsCmd = &cobra.Command{
+var branchesCmd = &cobra.Command{
 	Use:   "branches",
 	Short: "list branches",
 	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
@@ -68,8 +68,17 @@ func getMergedBranches() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	var results []string
+
 	branches := strings.Split(strings.TrimSpace(string(branchOut)), "\n")
-	return branches, nil
+
+	for _, branch := range branches {
+		if branch != "" {
+			results = append(results, branch)
+		}
+	}
+
+	return results, nil
 }
 
 func getCurrentBranch() (string, error) {
@@ -87,7 +96,7 @@ func getCurrentBranch() (string, error) {
 }
 
 func main() {
-	rootCmd.AddCommand(branchsCmd)
+	rootCmd.AddCommand(branchesCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

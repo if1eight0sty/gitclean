@@ -22,7 +22,7 @@ var rootCmd = &cobra.Command{
 }
 
 // branch command
-var branchsCmd = &cobra.Command{
+var branchesCmd = &cobra.Command{
 	Use:   "branches",
 	Short: "list branches",
 	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
@@ -46,11 +46,14 @@ var branchsCmd = &cobra.Command{
 			"master":  true,
 			"develop": true,
 		}
+
+		var deletable []string
 		for _, branch := range branches {
 			if branch == current || protectedBranches[branch] {
 				continue
 			}
 			fmt.Println(branch)
+			deletable = append(deletable, branch)
 		}
 
 		return nil
@@ -70,8 +73,17 @@ func getMergedBranches() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	var results []string
+
 	branches := strings.Split(strings.TrimSpace(string(branchOut)), "\n")
-	return branches, nil
+
+	for _, branch := range branches {
+		if branch != "" {
+			results = append(results, branch)
+		}
+	}
+
+	return results, nil
 }
 
 func getCurrentBranch() (string, error) {
@@ -90,9 +102,9 @@ func getCurrentBranch() (string, error) {
 
 func main() {
 
-	branchsCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Delete the merged branches")
+	branchesCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Delete the merged branches")
 
-	rootCmd.AddCommand(branchsCmd)
+	rootCmd.AddCommand(branchesCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

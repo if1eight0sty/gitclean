@@ -40,7 +40,7 @@ var branchesCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// Define which branches are off-limits
+
 		protectedBranches := map[string]bool{
 			"main":    true,
 			"master":  true,
@@ -54,6 +54,22 @@ var branchesCmd = &cobra.Command{
 			}
 			fmt.Println(branch)
 			deletable = append(deletable, branch)
+		}
+
+		if len(deletable) == 0 {
+			fmt.Println("No merged branches for delete.")
+			return nil
+		}
+
+		if !deleteFlag {
+			fmt.Println("Merged branches (Safe for delete):")
+
+			for _, branch := range deletable {
+				fmt.Printf(" - %s\n", branch)
+			}
+
+			fmt.Println("\n Run with --delete to remove branches")
+			return nil
 		}
 
 		return nil
@@ -100,9 +116,18 @@ func getCurrentBranch() (string, error) {
 	return currentBranch, nil
 }
 
+func initDeleteFLag() {
+	branchesCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Interactively delete merged branches")
+}
+
+func interactiveDelete(branches []string) error {
+
+	return nil
+}
+
 func main() {
 
-	branchesCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Delete the merged branches")
+	initDeleteFLag()
 
 	rootCmd.AddCommand(branchesCmd)
 

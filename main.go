@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var deleteFlag bool
+
 var rootCmd = &cobra.Command{
 	Use:   "gitclean",
 	Short: "A Git maintenance tool",
@@ -87,6 +89,9 @@ func getCurrentBranch() (string, error) {
 }
 
 func main() {
+
+	branchsCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Delete the merged branches")
+
 	rootCmd.AddCommand(branchsCmd)
 
 	if err := rootCmd.Execute(); err != nil {

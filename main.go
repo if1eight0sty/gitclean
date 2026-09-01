@@ -188,7 +188,7 @@ func interactiveDelete(branches []string) error {
 				return fmt.Errorf("invalid selection: %s", number)
 			}
 
-			toDelete = append(toDelete, number)
+			toDelete = append(toDelete, branches[index-1])
 		}
 	}
 
@@ -210,9 +210,9 @@ func interactiveDelete(branches []string) error {
 		var error error
 
 		if target == "local" {
-			deleteLocalBranch(branch)
+			error = deleteLocalBranch(branch)
 		} else {
-
+			error = deleteRemoteBranch(branch)
 		}
 		if error != nil {
 			fmt.Printf("Fail to delete %s: %v\n", branch, error)
@@ -224,13 +224,29 @@ func interactiveDelete(branches []string) error {
 }
 
 func deleteLocalBranch(branch string) error {
+	// checkCmd := exec.Command("git", "ls-remote", "--heads", "origin", branch)
+	// output, err := checkCmd.CombinedOutput()
+
+	// if err != nil || len(output) == 0 {
+	// 	return fmt.Errorf("branch %s does not exists on remote", branch)
+	// }
+
+	if !branchExists(branch) {
+		return fmt.Errorf("branch %s does not exists locally", branch)
+	}
+
 	cmd := exec.Command("git", "branch", "-d", branch)
 	return cmd.Run()
 }
 
 func deleteRemoteBranch(branch string) error {
 	cmd := exec.Command("git", "push", "origin", "--delete", branch)
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return fmt.Errorf("%s", string(output))
+	}
+	return nil
 }
 
 func main() {

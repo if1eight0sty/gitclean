@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -19,18 +20,20 @@ func initDeleteFLag() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "branches [branch1] [branch2]...",
+	Use:   "branches",
 	Short: "List or delete merged branches",
-	Long: `Lists branches that have been merged into the target branch (default: mai
-n/master).
-These branches can be safely reviewed and optionally deleted.
+	Long: `Lists branches that have been merged into the target branch.
+
+Target can be:
+  - A specific branch name (--target main)
+  - "." for current branch (--target .)
+  - Omitted to auto-detect main/master
 
 Examples:
   gitclean branches                    # List merged branches (default: main)
+  gitclean branches --target .         # Check against current branch
   gitclean branches --target develop   # Check against develop branch
-  gitclean branches --delete           # Interactive deletion
-  gitclean branches --delete feature/login feature/signup  # Delete specific branc
-hes`,
+  gitclean branches --delete           # Interactive deletion`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("this is the root command")
 		return nil
@@ -50,7 +53,9 @@ var branchesCmd = &cobra.Command{
 		}
 
 		target := targetBranch
-		if target == "" {
+		if target == "." {
+			target = current
+		} else if target == "" {
 			if branchExists("main") {
 				target = "main"
 			} else if branchExists("master") {
@@ -61,7 +66,7 @@ var branchesCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Working on branch: %s\n", current)
-		fmt.Printf("Checking merged into: %s\n\n", target)
+		fmt.Printf("Checking merged into: %s\n", target)
 		fmt.Println()
 
 		branches, err := getMergedBranches(target)
@@ -240,6 +245,9 @@ func deleteLocalBranch(branch string) error {
 }
 
 func deleteRemoteBranch(branch string) error {
+	done := showSpinner(fmt.Sprintf("Deleting %s from remote...", branch))
+	defer done()
+
 	cmd := exec.Command("git", "push", "origin", "--delete", branch)
 	output, err := cmd.CombinedOutput()
 
@@ -247,6 +255,28 @@ func deleteRemoteBranch(branch string) error {
 		return fmt.Errorf("%s", string(output))
 	}
 	return nil
+}
+
+func showSpinner(message string) func() {
+	stop := make(chan bool)
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-stop:
+				fmt.Printf("\r%s Done!          \n", message)
+				return
+			default:
+				fmt.Printf("\r%s %s", message, spinner[i%len(spinner)])
+				time.Sleep(100 * time.Millisecond)
+				i++
+			}
+		}
+	}()
+	return func() {
+		stop <- true
+	}
 }
 
 func main() {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -244,6 +245,9 @@ func deleteLocalBranch(branch string) error {
 }
 
 func deleteRemoteBranch(branch string) error {
+	done := showSpinner(fmt.Sprintf("Deleting %s from remote...", branch))
+	defer done()
+
 	cmd := exec.Command("git", "push", "origin", "--delete", branch)
 	output, err := cmd.CombinedOutput()
 
@@ -251,6 +255,28 @@ func deleteRemoteBranch(branch string) error {
 		return fmt.Errorf("%s", string(output))
 	}
 	return nil
+}
+
+func showSpinner(message string) func() {
+	stop := make(chan bool)
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-stop:
+				fmt.Printf("\r%s Done!          \n", message)
+				return
+			default:
+				fmt.Printf("\r%s %s", message, spinner[i%len(spinner)])
+				time.Sleep(100 * time.Millisecond)
+				i++
+			}
+		}
+	}()
+	return func() {
+		stop <- true
+	}
 }
 
 func main() {

@@ -178,7 +178,7 @@ func interactiveDelete(branches []string) error {
 	target, _ := reader.ReadString('\n')
 	target = strings.TrimSpace(strings.ToLower(target))
 
-	if target != "local" && target != "remote" {
+	if target != "local" && target != "remote" && target != "both" {
 		return fmt.Errorf("invalid choice: must be 'local' or 'remote' or 'both'")
 	}
 

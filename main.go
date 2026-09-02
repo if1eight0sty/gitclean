@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,10 +14,14 @@ import (
 
 var deleteFlag bool
 var targetBranch string
+var protectedBranchesFlag string
+var saveConfig bool
 
 func initDeleteFLag() {
 	branchesCmd.Flags().BoolVarP(&deleteFlag, "delete", "d", false, "Interactively delete merged branches")
 	branchesCmd.Flags().StringVarP(&targetBranch, "target", "t", "", "Target branch to check against (default: main/master)")
+	branchesCmd.Flags().StringVarP(&protectedBranchesFlag, "protected", "p", "", "Comma-separated protected branches (default: main,master)")
+	branchesCmd.Flags().BoolVar(&saveConfig, "save-config", false, "Save --protected branches to .gitclean config file")
 }
 
 var rootCmd = &cobra.Command{
@@ -24,16 +29,17 @@ var rootCmd = &cobra.Command{
 	Short: "List or delete merged branches",
 	Long: `Lists branches that have been merged into the target branch.
 
-Target can be:
-  - A specific branch name (--target main)
-  - "." for current branch (--target .)
-  - Omitted to auto-detect main/master
+Protected branches (won't be deleted):
+  - Always: main, master
+  - Add more via --protected flag: --protected develop,prod
+  - Or create .gitclean file in repo: protected=develop,prod,int
 
 Examples:
-  gitclean branches                    # List merged branches (default: main)
-  gitclean branches --target .         # Check against current branch
-  gitclean branches --target develop   # Check against develop branch
-  gitclean branches --delete           # Interactive deletion`,
+  gitclean branches                      # List merged branches
+  gitclean branches --protected develop  # Add develop to protected list
+  gitclean branches --target .           # Check against current branch
+  gitclean branches --delete             # Interactive deletion`,
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("this is the root command")
 		return nil
@@ -46,6 +52,14 @@ var branchesCmd = &cobra.Command{
 	Short: "list branches",
 	Long:  `Lists branches that have already been merged into the current branch. These branches can be safely reviewed and optionally deleted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		if saveConfig {
+			if err := saveConfigFile(protectedBranchesFlag); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			fmt.Println("Config saved to .gitclean")
+			return nil
+		}
 
 		current, err := getCurrentBranch()
 		if err != nil {
@@ -75,11 +89,7 @@ var branchesCmd = &cobra.Command{
 			return err
 		}
 
-		protectedBranches := map[string]bool{
-			"main":    true,
-			"master":  true,
-			"develop": true,
-		}
+		protectedBranches := buildProtectedBranches(protectedBranchesFlag)
 
 		var deletable []string
 		for _, branch := range branches {
@@ -163,13 +173,13 @@ func interactiveDelete(branches []string) error {
 	}
 	fmt.Println()
 
-	fmt.Print("Delete from (local/remote): ")
+	fmt.Print("Delete from (local/remote/both): ")
 	reader := bufio.NewReader(os.Stdin)
 	target, _ := reader.ReadString('\n')
 	target = strings.TrimSpace(strings.ToLower(target))
 
 	if target != "local" && target != "remote" {
-		return fmt.Errorf("invalid choice: must be 'local' or 'remote'")
+		return fmt.Errorf("invalid choice: must be 'local' or 'remote' or 'both'")
 	}
 
 	fmt.Print("Select branches to delete (e.g., 1,3 or 'all'): ")
@@ -212,17 +222,24 @@ func interactiveDelete(branches []string) error {
 	}
 
 	for _, branch := range toDelete {
-		var error error
+		var err error
 
-		if target == "local" {
-			error = deleteLocalBranch(branch)
-		} else {
-			error = deleteRemoteBranch(branch)
+		if target == "local" || target == "both" {
+			err = deleteLocalBranch(branch)
+			if err != nil {
+				fmt.Printf("Failed to delete %s locally: %v\n", branch, err)
+			} else {
+				fmt.Printf("Deleted locally: %s\n", branch)
+			}
 		}
-		if error != nil {
-			fmt.Printf("Fail to delete %s: %v\n", branch, error)
-		} else {
-			fmt.Printf("Deleted: %s\n", branch)
+
+		if target == "remote" || target == "both" {
+			err = deleteRemoteBranch(branch)
+			if err != nil {
+				fmt.Printf("Failed to delete %s from remote: %v\n", branch, err)
+			} else {
+				fmt.Printf("Deleted from remote: %s\n", branch)
+			}
 		}
 	}
 	return nil
@@ -268,7 +285,7 @@ func showSpinner(message string) func() {
 				fmt.Printf("\r%s Done!          \n", message)
 				return
 			default:
-				fmt.Printf("\r%s %s", message, spinner[i%len(spinner)])
+				fmt.Printf("\r%s %s", spinner[i%len(spinner)], message)
 				time.Sleep(100 * time.Millisecond)
 				i++
 			}
@@ -277,6 +294,72 @@ func showSpinner(message string) func() {
 	return func() {
 		stop <- true
 	}
+}
+
+func readConfig() string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	repoRoot := strings.TrimSpace(string(output))
+	configPath := filepath.Join(repoRoot, ".gitclean")
+	file, err := os.Open(configPath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "protected=") {
+			return strings.TrimPrefix(line, "protected=")
+		}
+	}
+	return ""
+}
+func saveConfigFile(protected string) error {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	repoRoot := strings.TrimSpace(string(output))
+	configPath := filepath.Join(repoRoot, ".gitclean")
+
+	return os.WriteFile(configPath, []byte("protected="+protected), 0644)
+}
+
+func buildProtectedBranches(custom string) map[string]bool {
+	protected := map[string]bool{
+		"main":   true,
+		"master": true,
+	}
+	if custom != "" {
+		branches := strings.Split(custom, ",")
+		for _, branch := range branches {
+			branch = strings.TrimSpace(branch)
+			if branch != "" {
+				protected[branch] = true
+			}
+		}
+		return protected
+	}
+
+	configProtected := readConfig()
+	if configProtected != "" {
+		branches := strings.Split(configProtected, ",")
+		for _, branch := range branches {
+			branch = strings.TrimSpace(branch)
+			if branch != "" {
+				protected[branch] = true
+			}
+		}
+	}
+
+	return protected
 }
 
 func main() {

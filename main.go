@@ -7,8 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/if1eight0sty/gitclean/internal/git"
+	"github.com/if1eight0sty/gitclean/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +62,7 @@ var branchesCmd = &cobra.Command{
 			return nil
 		}
 
-		current, err := getCurrentBranch()
+		current, err := git.GetCurrentBranch()
 		if err != nil {
 			return fmt.Errorf("could not determine current branch: %w", err)
 		}
@@ -70,9 +71,9 @@ var branchesCmd = &cobra.Command{
 		if target == "." {
 			target = current
 		} else if target == "" {
-			if branchExists("main") {
+			if git.BranchExists("main") {
 				target = "main"
-			} else if branchExists("master") {
+			} else if git.BranchExists("master") {
 				target = "master"
 			} else {
 				target = current
@@ -83,7 +84,7 @@ var branchesCmd = &cobra.Command{
 		fmt.Printf("Checking merged into: %s\n", target)
 		fmt.Println()
 
-		branches, err := getMergedBranches(target)
+		branches, err := git.GetMergedBranches(target)
 
 		if err != nil {
 			return err
@@ -119,53 +120,6 @@ var branchesCmd = &cobra.Command{
 	},
 }
 
-func branchExists(branch string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", branch)
-	return cmd.Run() == nil
-
-}
-
-func getMergedBranches(target string) ([]string, error) {
-	listBranchCmd := exec.Command(
-		"git",
-		"--no-pager",
-		"branch",
-		"--format=%(refname:short)",
-		"--merged",
-		target,
-	)
-
-	branchOut, err := listBranchCmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	var results []string
-
-	branches := strings.Split(strings.TrimSpace(string(branchOut)), "\n")
-
-	for _, branch := range branches {
-		if branch != "" {
-			results = append(results, branch)
-		}
-	}
-
-	return results, nil
-}
-
-func getCurrentBranch() (string, error) {
-	cmd := exec.Command("git", "branch", "--show-current")
-
-	currentBranchOutput, err := cmd.Output()
-
-	if err != nil {
-		return "", err
-	}
-
-	currentBranch := strings.TrimSpace((string(currentBranchOutput)))
-
-	return currentBranch, nil
-}
-
 func interactiveDelete(branches []string) error {
 	fmt.Println("Merged branches:")
 	for index, branch := range branches {
@@ -173,18 +127,13 @@ func interactiveDelete(branches []string) error {
 	}
 	fmt.Println()
 
-	fmt.Print("Delete from (local/remote/both): ")
-	reader := bufio.NewReader(os.Stdin)
-	target, _ := reader.ReadString('\n')
-	target = strings.TrimSpace(strings.ToLower(target))
+	target := ui.InputPrompt("Delete from (local/remote/both): ")
 
 	if target != "local" && target != "remote" && target != "both" {
 		return fmt.Errorf("invalid choice: must be 'local' or 'remote' or 'both'")
 	}
 
-	fmt.Print("Select branches to delete (e.g., 1,3 or 'all'): ")
-	selection, _ := reader.ReadString('\n')
-	selection = strings.TrimSpace(strings.ToLower(selection))
+	selection := ui.InputPrompt("Select branches to delete (e.g., 1,3 or 'all'): ")
 
 	var toDelete []string
 
@@ -212,9 +161,7 @@ func interactiveDelete(branches []string) error {
 		return nil
 	}
 
-	fmt.Printf("\nDelete %d branches from %s (y/n): ", len(toDelete), target)
-	confirm, _ := reader.ReadString('\n')
-	confirm = strings.TrimSpace(strings.ToLower(confirm))
+	confirm := ui.InputPrompt(fmt.Sprintf("\nDelete %d branches from %s (y/n): ", len(toDelete), target))
 
 	if confirm != "y" && confirm != "yes" {
 		fmt.Println("Canceled.")
@@ -225,7 +172,7 @@ func interactiveDelete(branches []string) error {
 		var err error
 
 		if target == "local" || target == "both" {
-			err = deleteLocalBranch(branch)
+			err = git.DeleteLocal(branch)
 			if err != nil {
 				fmt.Printf("Failed to delete %s locally: %v\n", branch, err)
 			} else {
@@ -234,7 +181,7 @@ func interactiveDelete(branches []string) error {
 		}
 
 		if target == "remote" || target == "both" {
-			err = deleteRemoteBranch(branch)
+			err = git.DeleteRemote(branch)
 			if err != nil {
 				fmt.Printf("Failed to delete %s from remote: %v\n", branch, err)
 			} else {
@@ -243,57 +190,6 @@ func interactiveDelete(branches []string) error {
 		}
 	}
 	return nil
-}
-
-func deleteLocalBranch(branch string) error {
-	// checkCmd := exec.Command("git", "ls-remote", "--heads", "origin", branch)
-	// output, err := checkCmd.CombinedOutput()
-
-	// if err != nil || len(output) == 0 {
-	// 	return fmt.Errorf("branch %s does not exists on remote", branch)
-	// }
-
-	if !branchExists(branch) {
-		return fmt.Errorf("branch %s does not exists locally", branch)
-	}
-
-	cmd := exec.Command("git", "branch", "-d", branch)
-	return cmd.Run()
-}
-
-func deleteRemoteBranch(branch string) error {
-	done := showSpinner(fmt.Sprintf("Deleting %s from remote...", branch))
-	defer done()
-
-	cmd := exec.Command("git", "push", "origin", "--delete", branch)
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		return fmt.Errorf("%s", string(output))
-	}
-	return nil
-}
-
-func showSpinner(message string) func() {
-	stop := make(chan bool)
-	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	go func() {
-		i := 0
-		for {
-			select {
-			case <-stop:
-				fmt.Printf("\r%s Done!          \n", message)
-				return
-			default:
-				fmt.Printf("\r%s %s", spinner[i%len(spinner)], message)
-				time.Sleep(100 * time.Millisecond)
-				i++
-			}
-		}
-	}()
-	return func() {
-		stop <- true
-	}
 }
 
 func readConfig() string {
